@@ -121,6 +121,94 @@ python3 -m optima.checks state  --month $M | bin/sql clone -
 Then test the rollbacks on the clone (reverse order, `checks preflight` must match production), take a backup
 (`checks backup`) and run the same imports with `--db prod` and `PROD_WRITE=yes`.
 
+## Maintaining the configuration
+
+### Finding a counterparty card
+
+```bash
+echo "SELECT Knt_KntId, Knt_Kod, Knt_Nazwa1, Knt_KrajISO, Knt_Export FROM CDN.Kontrahenci
+      WHERE Knt_Nazwa1 LIKE N'%name%' OR Knt_Kod LIKE '%name%';" | bin/sql prod -
+```
+
+### Adding a seller
+
+A source with `"card": null` maps each `seller` from the CSV to a card. An unknown seller stops generation:
+
+```
+MISSING CARD: Marketplace C seller='Seller Four' - add it to config/cards.json
+```
+
+Existing card: add the seller name with the card id.
+
+```json
+"sellers": {"Marketplace C": {"Seller Four": 112}}
+```
+
+New card: reference a key and define the card in `new_cards`. The import creates it before the first document
+that uses it.
+
+```json
+"sellers":   {"Marketplace C": {"Seller Four": "NEW:SELLER_FOUR"}},
+"new_cards": {"SELLER_FOUR": {"tpl": 7, "code": "SELLER FOUR", "name": "Seller Four Ltd.",
+                              "country": "Malta", "iso": "MT", "tax_id": "MT12345678",
+                              "street": "Main St", "number": "1", "city": "Valletta", "postal_code": "VLT 1000"}}
+```
+
+| field | column | notes |
+|---|---|---|
+| `tpl` | | id of an existing card to clone (use a card of the same kind, e.g. a foreign supplier) |
+| `code` | `Knt_Kod` | unique, max 20 characters |
+| `name` | `Knt_Nazwa1` | legal name, max 50 characters |
+| `country`, `iso` | `Knt_Kraj`, `Knt_KrajISO` | country name as Optima stores it (Polish); `iso` sets `Knt_Export`: EU → 3, outside the EU → 1; without `iso` the template's value is kept |
+| `tax_id` | `Knt_Nip`, `Knt_NipE` | |
+| `street`, `number`, `city`, `postal_code` | address columns | optional |
+
+The key (`SELLER_FOUR`) determines the card's GUID: do not rename it after the card has been created. A rollback
+deletes a created card only if no document, payment or KPiR entry uses it.
+
+### Adding a source
+
+Add an entry to `platforms`; the name must equal the `source` column of the CSV. Rows from sources missing in
+`platforms` are skipped with a warning.
+
+| field | meaning |
+|---|---|
+| `register` | `ZAKUP` (original + 2 DW, reverse charge) or `INNE` (original only) |
+| `card` | card id for all orders of the source, or `null` for one card per seller |
+| `in_currency` | `true`: original document in the order currency at `nbp_rate`; `false`: in PLN |
+| `doc_number_from_manifest` | optional; `VaN_Dokument` taken from the month's manifest instead of `order_id` |
+
+### Service invoices
+
+Add an item to `months/YYYY-MM/subscriptions.json`. `card` is a card id or `NEW:<key>` defined in `new_cards`
+(as above); `template` is `subscription_non_eu`, `subscription_foreign` or a VaNID; `codes` are the JPK_V7 codes of
+the original (`["BFK"]` or `["IMP", "BFK"]`). A document with the same number already in `ZAKUP` is skipped.
+
+### Choosing templates
+
+Each entry in `templates.json` points to records of one document entered by hand in Optima. Pick a recent document
+of the same type and read the related ids:
+
+```bash
+echo "DECLARE @v int=<VaNID>;
+SELECT 'van' k, @v id
+UNION ALL SELECT 'vat', VaT_VaTID FROM CDN.VatTab WHERE VaT_VaNID=@v
+UNION ALL SELECT 'va7', Va7_Va7ID FROM CDN.VatTab7 WHERE Va7_VaNID=@v
+UNION ALL SELECT 'bzd', BZd_BZdID FROM CDN.BnkZdarzenia WHERE BZd_DokumentTyp=2 AND BZd_DokumentID=@v
+UNION ALL SELECT 'kpr', VaN_KpRID FROM CDN.VatNag WHERE VaN_VaNID=@v
+UNION ALL SELECT 'dwz', z.VaN_VaNID FROM CDN.VatNag z WHERE z.VaN_VanOrgId=@v
+UNION ALL SELECT 'dwz_vat', t.VaT_VaTID FROM CDN.VatNag z JOIN CDN.VatTab t ON t.VaT_VaNID=z.VaN_VaNID WHERE z.VaN_VanOrgId=@v
+UNION ALL SELECT 'dwz_va7', s.Va7_Va7ID FROM CDN.VatNag z JOIN CDN.VatTab7 s ON s.Va7_VaNID=z.VaN_VaNID WHERE z.VaN_VanOrgId=@v
+UNION ALL SELECT 'dws', d.VaN_VaNID FROM CDN.VatNag z JOIN CDN.VatNag d ON d.VaN_VanOrgId=z.VaN_VaNID WHERE z.VaN_VanOrgId=@v
+UNION ALL SELECT 'dws_vat', t.VaT_VaTID FROM CDN.VatNag z JOIN CDN.VatNag d ON d.VaN_VanOrgId=z.VaN_VaNID
+  JOIN CDN.VatTab t ON t.VaT_VaNID=d.VaN_VaNID WHERE z.VaN_VanOrgId=@v;" | bin/sql prod -
+```
+
+The output maps directly onto the `purchase` entry (for `other`: `van`, `vat`, `bzd`, `kpr`). For
+`subscription_*` and `recurring_document` the VaNID alone is enough; the related rows are looked up at run time.
+`checks preflight` reports how many templates were found (`templates_vatnag_8`, `templates_kpr_3`,
+`templates_bzd_3` must equal their suffix).
+
 ## Behaviour
 
 - **Template cloning.** New rows are `INSERT … SELECT` from template rows, overriding only the variable columns.
