@@ -11,6 +11,20 @@ Glossary: **DW** (dowód wewnętrzny) = internal document for reverse-charge VAT
 
 The application writes the graph itself; triggers only validate, fill a few fields and cascade deletes.
 
+```mermaid
+flowchart LR
+  ORG["VatNag original<br/>ZAKUP 1/1"] --> VT1[VatTab] --> V71[VatTab7]
+  ORG --> K1[DokKodyJPKV7]
+  ORG --> BZD["BnkZdarzenia<br/>payment"]
+  ORG --> KPR["ZapisyKPR<br/>(VaN_KpRID)"]
+  ORG -->|VanOrgId| DWZ["VatNag DW 1/2<br/>WEW, output VAT"]
+  DWZ --> VT2[VatTab] --> V72[VatTab7]
+  DWZ --> K2[DokKodyJPKV7]
+  DWZ -->|VanOrgId| DWS["VatNag DW 4/1<br/>WEW, input VAT"]
+  DWS --> VT3[VatTab]
+  DWS --> K3[DokKodyJPKV7]
+```
+
 | step | records |
 |---|---|
 | A. document added to a VAT register | `VatNag` (original) + `VatTab` + `VatTab7` + `DokKodyJPKV7` + `BnkZdarzenia` (payment) |
@@ -58,10 +72,15 @@ Per register:
 | field | rule |
 |---|---|
 | `VaN_Lp` | 1..N without gaps per `(Rejestr, Rodzaj, Typ, RokMies)`, in `DataZap` order. DW have the original's `Lp`. |
-| `VaN_IdentKsieg` | assigned by the trigger, in insertion order. |
+| `VaN_IdentKsieg` | assigned by the trigger, in insertion order. When imports of different modules interleave, identifiers do not follow dates; this is how the application behaves too. |
 | `KPR_Lp` | in `KPR_DataOpe` order; continues from `max(KPR_Lp)` of the previous month. |
 
-The application renumbers the month's buffer after inserts; the generators do the same (`common.renumber`).
+The application renumbers the month's buffer after inserts; the generators do the same (`common.renumber`), so a
+module run later in the month (e.g. for documents dated at the end of it) still produces date-ordered `Lp`.
+
+Optima allows two KPiR numbering modes: continuous across months or restarting at 1 every month. `renumber`
+implements the continuous mode; for monthly numbering replace `@base` in `common.renumber` with 0 and drop the
+`KPiR start = max(prev.)+1` rule from `checks.verify`.
 
 ## 4. Field rules
 
@@ -117,6 +136,19 @@ Copy of the `VatTab` line (`RokMiesiac, RodzajZakupu, Stawka, Flaga, Netto, VAT,
 - Amount in `KPR_Towary` (purchases), `KPR_Inne` (services, reclassified KSeF invoices) or `KPR_Sprzedaz` (sales); other columns 0.
 - Full amount as cost, regardless of the percentage defined on the category.
 
+### Text column limits
+
+Literals longer than the column abort generation (`common.clone`). Limits that matter in practice:
+
+| column | limit | handling |
+|---|---|---|
+| `BZd_ElixirO1`, `BZd_ElixirO2` | 35 characters each | the transfer title is split across both |
+| `BZd_SplitPayNrDok` | 30 characters | document number truncated |
+| `Knt_Kod` | 20 characters | must be unique |
+| `Knt_Nazwa1` | 50 characters | |
+
+`sys.columns.max_length` is in bytes; for `nvarchar`/`nchar` the character limit is half of it (`common.col_len`).
+
 ## 5. Idempotency
 
 - `VaN_ImportRowId` = UUIDv5(`guid_namespace`, `source|account|order_id|role`), role ∈ {`ORG`, `DWZ`, `DWS`};
@@ -141,3 +173,48 @@ Copy of the `VatTab` line (`RokMiesiac, RodzajZakupu, Stawka, Flaga, Netto, VAT,
 - A new card is a clone of a template card (`new_cards.<key>.tpl`); `Knt_Export` follows from the country
   (EU = 3, outside the EU = 1). `Kontrahenci` has unique `Knt_Kod` and `KntGUID`.
 - An order whose seller has no card stops generation (`MISSING CARD`).
+
+## 8. Sales document (BR)
+
+One `BR/01/MM/YYYY` document per month, dated on the last day of the month, paid in cash and settled in a cash
+report (`templates.json: br`).
+
+| record | notes |
+|---|---|
+| `VatNag` | register `SPRZEDAŻ`, `Rodzaj/Typ = 0/2`, rate ZW; `Lp` = next in the register |
+| `VatTab`, `VatTab7` | one line, amount = revenue |
+| `BnkZdarzenia` | cash payment, inserted with `Rozliczono=1`, `KwotaRoz=0` |
+| `BnkZapisy` | cash receipt in the report `cash_report`: `BRpLP` = next in the report, number `RVS/<n>/YYYY` (`NumerNr` = next for the year) |
+| `BnkRozKwoty` | settlement: left side = payment (`BZd`), right side = receipt (`BZp`) |
+| `ZapisyKPR` | column `Sprzedaz` |
+
+Inserting `BnkRozKwoty` fires triggers that create the `BnkRozRelacje` rows, mark the payment as settled
+(`Rozliczono`, `Rozliczono2`, `Stan`, `KwotaRoz`) and add the amount to the report's revenue (`BRp_Przychody`).
+The rollback deletes `BnkRozKwoty` first, which restores the report's revenue, then the receipt, the payment and
+the document. The cash report must be open (`BRp_Zamkniety=0`) and must not
+be dated after the document.
+
+## 9. Invoices imported from KSeF
+
+Optima's KSeF import registers an invoice in `ZAKUP` (0/1) with deduction 1, no category, KPiR column 3 and no KPiR
+entry. Moving it to another register requires updating `VatNag`, `VatTab`, `BnkZdarzenia` (category) and
+`DokumentyKSeF.DKF_RejestrDocelowy`; otherwise the KSeF document list and the register disagree. The KPiR entry
+is created from the document's own counterparty snapshot (KSeF data), not from the card.
+
+## 10. Exchange rates
+
+NBP table A, the last table published before the event date. `nbp.rate_before` looks back 14 days, which covers
+weekends and public holidays; no table in that window stops generation. Rates are fetched from `api.nbp.pl`
+and cached per run.
+
+## 11. Alternatives to direct SQL
+
+Optima's XML import (Tools → Distributed work, format OPT021) creates VAT register entries only: internal
+documents and KPiR posting stay separate operations in the GUI, one XML entry represents one register entry, and a
+document exported once cannot be imported again. Writing the full graph in SQL, cloned from GUI-made templates,
+produces the same records in one step and allows exact rollback.
+
+## 12. Not written
+
+- `RejestrOperacji`: the operation history in the GUI has no entries for imported documents.
+- Tax declarations (VAT-9M, JPK_V7) and their tables.

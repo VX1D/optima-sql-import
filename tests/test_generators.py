@@ -9,7 +9,7 @@ os.environ['OPTIMA_CONFIG_DIR'] = os.path.join(ROOT, 'config')
 os.environ['OPTIMA_QUIET_EXAMPLE'] = '1'
 sys.path.insert(0, ROOT)
 
-from optima import common as c, nbp, purchases, subscriptions, sales, ksef_reclass, checks, clone_document  # noqa: E402
+from optima import common as c, nbp, purchases, subscriptions, sales, ksef_reclass, checks, clone_document, schema  # noqa: E402
 
 M = '2026-03'
 _orig_load = c.load_json
@@ -91,6 +91,20 @@ class Core(unittest.TestCase):
         with mock.patch.object(nbp, '_rates', lambda *a: rates):
             self.assertEqual(nbp.rate_before('EUR', dt.date(2026, 3, 6))[1], Decimal('4.20'))
             self.assertEqual(nbp.rate_before('EUR', dt.date(2026, 3, 9))[1], Decimal('4.21'))
+
+
+class Schema(unittest.TestCase):
+    def test_save_parses_sqlcmd_output(self):
+        import tempfile
+        raw = io.StringIO('\ufefftbl|column_id|col|typ|max_length|precision|scale|is_nullable|is_identity|is_computed|dflt\r\n'
+                          '---|---------|---|---|----------|---------|-----|-----------|-----------|-----------|----\r\n'
+                          'CDN.T|1|T_Id|int|4|10|0|0|1|0|NULL\r\n'
+                          "CDN.T|2|T_Kod|varchar|20|0|0|0|0|0|('')\r\n\r\n")
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(io.StringIO()):
+            out = os.path.join(d, 'cols.tsv')
+            schema.save(raw, out)
+            self.assertEqual(open(out, newline='').read(),
+                             "CDN.T|1|T_Id|int|4|10|0|0|1|0|NULL\r\nCDN.T|2|T_Kod|varchar|20|0|0|0|0|0|('')\r\n")
 
 
 class BinSql(unittest.TestCase):
