@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to config.json (gitignored) and fill in. The *_dir paths are on the SQL Server host (Windows).",
+  "db_prod": "CDN_KP_Company_Example",
+  "db_clone": "CDN_KP_Company_CLONE_TEST",
+  "backup_dir": "C:\\Program Files\\Microsoft SQL Server\\MSSQL16.OPTIMA\\MSSQL\\Backup",
+  "sql_data_dir": "C:\\Program Files\\Microsoft SQL Server\\MSSQL16.OPTIMA\\MSSQL\\DATA",
+  "backup_prefix": "COMPANY",
+  "months_dir": "months",
+  "guid_namespace": "1d6308d6-23ef-4be1-93c1-dcd979bbd4af",
+  "_guid_namespace": "Generate your own (python3 -c 'import uuid; print(uuid.uuid4())') before the first import and never change it: record GUIDs, and so idempotency, depend on it.",
+  "batch_tags": {"purchases": "IMPZK", "subscriptions": "IMPSB", "sales": "IMPBR", "clone_document": "IMPKD"}
+}

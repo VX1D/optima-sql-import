@@ -1,0 +1,19 @@
+{
+  "_comment": "Source/seller -> Optima counterparty card (Knt_KntId). A number = existing card, 'NEW:KEY' = card created from new_cards. A source with card=null uses one card per seller (sellers). doc_number_from_manifest: VaN_Dokument comes from the month's manifest instead of order_id. Unknown seller = generator stops with 'MISSING CARD'. Country names are stored in Polish, as in Optima.",
+  "platforms": {
+    "Store A":       {"register": "ZAKUP", "card": 4,    "in_currency": false},
+    "Store B":       {"register": "ZAKUP", "card": 38,   "in_currency": true},
+    "Marketplace C": {"register": "INNE",  "card": null, "in_currency": true},
+    "Marketplace D": {"register": "ZAKUP", "card": null, "in_currency": true, "doc_number_from_manifest": true}
+  },
+  "sellers": {
+    "Marketplace C": {"Seller One": 39, "Seller Two": 90, "Seller Three": "NEW:SELLER_THREE"},
+    "Marketplace D": {"Example Trading LLC": 7, "Sample Ltd.": "NEW:SAMPLE_LTD"}
+  },
+  "new_cards": {
+    "SELLER_THREE": {"tpl": 163, "code": "SELLER THREE", "name": "Seller Three Holdings LLC"},
+    "SAMPLE_LTD":   {"tpl": 7, "code": "SAMPLE LTD", "name": "Sample Ltd.", "country": "Malta", "iso": "MT", "tax_id": "MT00000000"},
+    "VENDOR_IE":    {"tpl": 161, "code": "VENDOR IE", "name": "VENDOR IRELAND LIMITED", "country": "Irlandia", "iso": "IE", "tax_id": "IE0000000X",
+                     "street": "EXAMPLE STREET", "number": "1", "city": "DUBLIN", "postal_code": "D01 X000"}
+  }
+}

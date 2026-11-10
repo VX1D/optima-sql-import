@@ -1,0 +1,6 @@
+[
+  {"key": "SVC1", "number": "INV-EXAMPLE-0001", "date": "2026-03-28", "amount": "20", "currency": "USD", "card": 144,
+   "template": "subscription_non_eu", "codes": ["BFK"], "description": "Example service from outside the EU"},
+  {"key": "SVC2", "number": "EXAMPLE-0002", "date": "2026-03-30", "amount": "85.00", "currency": "PLN", "card": "NEW:VENDOR_IE",
+   "template": "subscription_foreign", "codes": ["IMP", "BFK"], "description": "EU service, reverse charge"}
+]

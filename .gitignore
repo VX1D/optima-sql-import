@@ -1,0 +1,8 @@
+config/config.json
+config/cards.json
+config/templates.json
+/months/
+/.sql-results/
+*.bak
+__pycache__/
+*.pyc

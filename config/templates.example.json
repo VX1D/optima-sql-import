@@ -1,0 +1,18 @@
+{
+  "_comment": "Ids of template records (entered by hand in Optima) that new records are cloned from. checks preflight verifies they exist before every import. If a template disappears or changes, pick a new document of the same type from the last month. Values below are examples.",
+  "purchase": {"van": 2211, "vat": 2214, "va7": 1375, "bzd": 841, "kpr": 1809,
+               "dwz": 2321, "dwz_vat": 2324, "dwz_va7": 1484, "dws": 2322, "dws_vat": 2325,
+               "_comment": "purchase in PLN: ZAKUP 1/1 + DW 1/2 (sales register, output VAT) + DW 4/1 (purchase register, input VAT)"},
+  "other": {"van": 2599, "vat": 2602, "bzd": 1010, "kpr": 1809,
+            "_comment": "purchase in EUR in the INNE 0/1 register, no DW"},
+  "va7_original": 1375,
+  "subscription_non_eu": 2264,
+  "subscription_foreign": 2263,
+  "br": {"van": 2601, "vat": 2604, "va7": 1604, "bzd": 1012, "bzp": 3, "brk": 3, "kpr": 1855, "cash_report": 1,
+         "_comment": "BR/01/MM/YYYY: SPRZEDAŻ 0/2 ZW + cash payment settled by an RVS entry in the cash report"},
+  "ksef_kpr": 1686,
+  "ksef_card": 45,
+  "ksef_category": 79,
+  "recurring_document": 2545,
+  "operator_card": 163
+}

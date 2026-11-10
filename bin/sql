@@ -1,0 +1,33 @@
+#!/bin/bash
+# Runs a .sql file on the Optima SQL Server through a Windows host on the network (ssh + sqlcmd) and prints the result.
+#   bin/sql prod|clone <file.sql> [--full]          --full = no truncation of long fields (sqlcmd -y 0, for FOR XML)
+#   python3 -m optima.<module> ... | bin/sql clone -   reads SQL from stdin
+# Configuration (env):
+#   OPTIMA_SSH_HOST    e.g. admin@windows-host                 (required)
+#   OPTIMA_REMOTE_DIR  working directory on the Windows host   (default C:\optima-sql)
+#   OPTIMA_SQL_SERVER  SQL instance, e.g. SERVER\OPTIMA        (required)
+#   OPTIMA_SA_FILE     file with the `sa` password on the Windows host (default <REMOTE_DIR>\.sa)
+# Database names come from config/config.json (db_prod / db_clone). Output is also kept in .sql-results/<name>.out.
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+HOST=${OPTIMA_SSH_HOST:?set OPTIMA_SSH_HOST}
+SERVER=${OPTIMA_SQL_SERVER:?set OPTIMA_SQL_SERVER}
+D=${OPTIMA_REMOTE_DIR:-'C:\optima-sql'}
+PW=${OPTIMA_SA_FILE:-"$D\\.sa"}
+SSH="-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=4"
+target=${1:?prod|clone}; file=${2:?file.sql or -}; full=${3:-}
+case $target in prod|clone) ;; *) echo "target: prod|clone" >&2; exit 2;; esac
+db=$(cd "$ROOT" && OPTIMA_QUIET_EXAMPLE=1 python3 -c "from optima import common as c; print(c.db_name('$target'))")
+fmt=W; [ "$full" = "--full" ] && fmt=y0
+OUT="$ROOT/.sql-results"; mkdir -p "$OUT"
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+if [ "$file" = "-" ]; then n="stdin_$(date +%H%M%S)"; cat > "$tmp/$n.sql"; else n=$(basename "$file" .sql); cp "$file" "$tmp/$n.sql"; fi
+if [ "$target" = prod ] && grep -q -i -E '\b(INSERT|UPDATE|DELETE|MERGE|BACKUP|RESTORE|ALTER|DROP|CREATE|TRUNCATE|EXEC)\b' "$tmp/$n.sql" \
+   && [ "${PROD_WRITE:-}" != "yes" ]; then
+  echo "REFUSED: the script contains write statements and target=prod. Run it on the clone first; for production: PROD_WRITE=yes bin/sql prod ..." >&2; exit 5
+fi
+rd=${D//\\//}
+scp -q $SSH "$tmp/$n.sql" "$ROOT/bin/remote/q.ps1" "$HOST:$rd/" || { echo "SCP UPLOAD FAILED" >&2; exit 3; }
+ssh $SSH "$HOST" "Remove-Item -ErrorAction SilentlyContinue $D\\$n.out; powershell -NoProfile -ExecutionPolicy Bypass -File $D\\q.ps1 -In $D\\$n.sql -Out $D\\$n.out -Server '$SERVER' -Db '$db' -PasswordFile '$PW' -Format $fmt" 2>&1 | grep -v -E "quantum|store now|pq.html" || true
+scp -q $SSH "$HOST:$rd/$n.out" "$OUT/$n.out" || { echo "SCP DOWNLOAD FAILED (no result!)" >&2; exit 4; }
+sed 's/\r$//' "$OUT/$n.out"

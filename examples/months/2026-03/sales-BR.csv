@@ -1,0 +1,12 @@
+﻿payment_day;currency;orders;sum_currency;nbp_rate;nbp_table;sum_pln
+2026-03-02;PLN;1;59.99;1;;59.99
+2026-03-04;PLN;1;129.00;1;;129.00
+2026-03-15;PLN;1;15.00;1;;15.00
+
+CURRENCY SUMMARY
+;PLN;3;203.99;;;203.99
+TOTAL;;3;;;;203.99
+
+SKIPPED
+2026-03-06;PLN;pay-0003;24.50;0.00;PAID;NO (paid 0.00)
+;PLN;pay-0004;39.99;0.00;CANCELLED;NO (CANCELLED)
